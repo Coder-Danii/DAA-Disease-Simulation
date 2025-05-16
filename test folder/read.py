@@ -12,7 +12,7 @@ color=[]
 ra = random.randint(0,4999)
 print(ra)
 for i in range(5000):
-    if i!= ra:
+    if i < 2000  :
         color.append("lightblue")
     else:
         color.append("red")
@@ -25,6 +25,8 @@ with open("pos.pickle","rb") as f:
 
 with open ("adjList.pickle", "rb") as f:
     adj=pickle.load(f)
+
+print(adj)
 
 print("Loading done")
 
