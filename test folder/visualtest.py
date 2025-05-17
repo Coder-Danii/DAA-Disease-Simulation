@@ -3,9 +3,9 @@ import matplotlib.pyplot as plt
 import pickle 
 import numpy as np
 from vispy import app, scene
-import time
 import random
 from vispy.app import Timer
+import time 
 positions=[]
 adj=None
 colors=None
@@ -20,26 +20,36 @@ end_y = 0
 target_xmin, target_xmax = [0,0]
 target_ymin, target_ymax = [0,0]
 infected=[]
+infected_count=-1
 to_zoom=True
 infected_color=[1,0,0,1]
 non_infected_color=[0.8, 1, 0.8, 1] 
 at_risk_color=[0, 0.3, 1, 1]
+is_infected=None
+is_alive=None
+move_count=[]
+move_timer=None
 
 def load_data():
-    global positions,adj,start_x,end_x,start_y,end_y
+    global positions,adj,start_x,end_x,start_y,end_y,infected, infected_count, target_xmin, target_xmax, target_ymin, target_ymax
     G = nx.read_weighted_edgelist("graph.edgelist.gz", delimiter=",", nodetype=int)
 
     with open("pos.pickle","rb") as f:
         pos=pickle.load(f)
     with open ("adjList.pickle", "rb") as f:
         adj=pickle.load(f)
+       
     positions = np.array([pos[node] for node in pos])
+
+    is_infected = np.zeros(len(positions), dtype=bool)
+    is_alive = np.ones(len(positions), dtype=bool)
     start_x = positions[:,0].min()
     end_x = positions[:,0].max()
     start_y = positions[:,1].min()
     end_y = positions[:,1].max()
+
 def start():
-    global infected, colors,scatter,view,target_xmin, target_xmax, target_ymin, target_ymax, timer
+    global infected,infected_count, colors,scatter,view,target_xmin, target_xmax, target_ymin, target_ymax, timer
     canvas = scene.SceneCanvas(keys='interactive', show=True, bgcolor='white', fullscreen=True)
     view = canvas.central_widget.add_view()
     # Scatter plot (circles)
@@ -47,13 +57,16 @@ def start():
 
     idx= random.randint(0,(len(positions)-1))
     x, y = positions[idx]
-    infected.append(idx)   
+    infected.append(idx)
+    infected_count+=1
     target_xmin, target_xmax = x-0.05, x+0.05
     target_ymin, target_ymax = y-0.05, y+0.05
-   
     timer = 0
 
     colors[idx] = infected_color
+    for i in infected:
+        for node in adj[i]:
+            colors[node[0]] = at_risk_color
     for node in adj[infected[0]]:
         colors[node[0]] = at_risk_color
 
@@ -69,25 +82,83 @@ def start():
     delay_timer = Timer(interval=2.0, iterations=1, connect=wait_two, start=True)    
     
 
-def start_zoom():
-    global  target_xmin, target_xmax, target_ymin, target_ymax
-    rel = []
-    for idx in infected:
-        rel.extend(adj[idx])
-    rel_x = []
-    rel_y = []
-    for i in rel:
-        rel_x.append(positions[i[0]][0])
-        rel_y.append(positions[i[0]][1])
-    rel_x = np.array(rel_x)
-    rel_y = np.array(rel_y)
-    rmin_x, rmax_x = min(rel_x[:]),max(rel_x[:])
-    rmin_y, rmax_y = min(rel_y[:]),max(rel_y[:])
-    target_xmin, target_xmax = min(target_xmin, rmin_x),max(target_xmax, rmax_x)
-    target_ymin, target_ymax = min(target_ymin, rmin_y),max(target_ymax, rmax_y)
+   
+original_positions = None
+move_indices = None
+move_midpoint = None
+move_steps = 120
+move_current_step = [0]
+move_phase = [1]  # 1: moving to midpoint, 2: moving back
 
-    global delay_timer
-    delay_timer = Timer(interval=2.0, iterations=1, connect=wait_two, start=True)    
+def start_node_meeting_animation():
+    global original_positions,move_count, move_indices, move_midpoint, move_current_step, move_phase
+
+    # Pick two random nodes
+    move_indices = []
+    move_midpoint =[]
+
+    original_positions = []
+    print(adj[infected[0]])
+    for i,x in enumerate(infected):
+        for node in adj[x]:
+            print(node[0])
+            move_indices.append([x, node[0]])
+            original_positions.append([positions[x].copy(), positions[node[0]].copy()])
+            move_midpoint.append((positions[x] + positions[node[0]]) / 2)   
+    print(f"Moving nodes {move_indices[0][0]} and {move_indices[0][1]} toward each other.")
+    
+
+    # Store their original positions
+    # Compute midpoint
+    print(f"Midpoint: {move_midpoint}")
+    move_current_step[0] = 0
+    move_phase[0] = 1  # Start with phase 1
+
+    # Start the animation timer
+    move_count=0
+    global move_timer
+    move_timer = Timer(interval=0.016, connect=move_nodes_meeting, start=True)
+
+
+def move_nodes_meeting(event):
+    global move_timer, positions, scatter,move_count, move_indices, original_positions, move_midpoint, move_current_step, move_phase
+    idx1, idx2 = move_indices[move_count]
+
+    steps = move_steps
+    pos1_orig, pos2_orig = original_positions[move_count][0], original_positions[move_count][1]
+    midpoint = move_midpoint[move_count]
+    steps = move_steps
+    t = move_current_step[0] / steps
+
+    if move_phase[0] == 1:
+        # Move toward the midpoint
+        positions[idx1] = (1 - t) * pos1_orig + t * midpoint
+        positions[idx2] = (1 - t) * pos2_orig + t * midpoint
+    else:
+        # Move back to original positions
+        
+        positions[idx1] = (1 - t) * midpoint + t * pos1_orig
+        positions[idx2] = (1 - t) * midpoint + t * pos2_orig
+
+    scatter.set_data(positions, face_color=colors, size=10, edge_color=None)
+    move_current_step[0] += 1
+    if move_current_step[0] > steps:
+        move_current_step[0] = 0
+        if move_phase[0] == 1:
+            time.sleep(0.5)  # Pause before moving back
+            move_phase[0] = 2  # Switch to moving back
+        else:
+           move_timer.stop()  # Stop the timer after moving back
+           if move_count <len(move_indices):
+                move_count+=1
+                move_phase[0] = 1
+                move_timer = Timer(interval=0.016, connect=move_nodes_meeting, start=True)
+
+
+                
+                
+                
+
 
 def smooth_zoom(event):
     global start_x, end_x, start_y, end_y,to_zoom
@@ -111,21 +182,40 @@ def smooth_zoom(event):
         if to_zoom:
             to_zoom = False
             start_zoom()
-            
-        
-        
+        else:
+            start_node_meeting_animation()
 
+def start_zoom():
+    global  target_xmin, target_xmax, target_ymin, target_ymax
+    rel = []
+    for idx in infected:
+        rel.extend(adj[idx])
+    rel_x = []
+    rel_y = []
+    for i in rel:
+        rel_x.append(positions[i[0]][0])
+        rel_y.append(positions[i[0]][1])
+    rel_x = np.array(rel_x)
+    rel_y = np.array(rel_y)
+    rmin_x, rmax_x = min(rel_x[:]),max(rel_x[:])
+    rmin_y, rmax_y = min(rel_y[:]),max(rel_y[:])
+    target_xmin, target_xmax = min(target_xmin, rmin_x),max(target_xmax, rmax_x)
+    target_ymin, target_ymax = min(target_ymin, rmin_y),max(target_ymax, rmax_y)
+
+    global delay_timer
+    delay_timer = Timer(interval=2.0, iterations=1, connect=wait_two, start=True)
+    
+    
 def wait_two(event):
     global timer
+    timer = Timer(interval=0.016, connect=smooth_zoom, start=True)  # ~180 
     
-    timer = Timer(interval=0.016, connect=smooth_zoom, start=True)  # ~180 FPS
     
+
 
 if __name__ == '__main__':
     
     load_data()
     start()
-    
-    
     app.run()
     
