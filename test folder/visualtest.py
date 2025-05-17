@@ -5,8 +5,9 @@ import numpy as np
 from vispy import app, scene
 import random
 from vispy.app import Timer
-import time 
+import math 
 positions=[]
+i=0
 adj=None
 colors=None
 scatter=None
@@ -23,15 +24,31 @@ infected=[]
 infected_count=-1
 to_zoom=True
 infected_color=[1,0,0,1]
+interaction_color=[1,1,0,1]
 non_infected_color=[0.8, 1, 0.8, 1] 
 at_risk_color=[0, 0.3, 1, 1]
 is_infected=None
 is_alive=None
 move_count=[]
 move_timer=None
+original_positions = None
+move_indices = None
+move_midpoint = None
+move_steps = 60
+new_positions = None
+move_current_step = [0]
+move_phase = [1]  # 1: moving to midpoint, 2: moving back
+G={}
+idx1=0
+idx2=0
 
+pos1_orig=None
+pos2_orig=None
+midpoints=None
+max_inf_degree=0
+new_scatter=None
 def load_data():
-    global positions,adj,start_x,end_x,start_y,end_y,infected, infected_count, target_xmin, target_xmax, target_ymin, target_ymax
+    global G,positions,adj,start_x,end_x,start_y,end_y,infected, infected_count, target_xmin, target_xmax, target_ymin, target_ymax
     G = nx.read_weighted_edgelist("graph.edgelist.gz", delimiter=",", nodetype=int)
 
     with open("pos.pickle","rb") as f:
@@ -49,7 +66,7 @@ def load_data():
     end_y = positions[:,1].max()
 
 def start():
-    global infected,infected_count, colors,scatter,view,target_xmin, target_xmax, target_ymin, target_ymax, timer
+    global infected,max_inf_degree,infected_count, colors,scatter,view,target_xmin, target_xmax, target_ymin, target_ymax, timer
     canvas = scene.SceneCanvas(keys='interactive', show=True, bgcolor='white', fullscreen=True)
     view = canvas.central_widget.add_view()
     # Scatter plot (circles)
@@ -58,6 +75,8 @@ def start():
     idx= random.randint(0,(len(positions)-1))
     x, y = positions[idx]
     infected.append(idx)
+    if max_inf_degree < G.degree(idx):
+        max_inf_degree = G.degree(idx)
     infected_count+=1
     target_xmin, target_xmax = x-0.05, x+0.05
     target_ymin, target_ymax = y-0.05, y+0.05
@@ -73,6 +92,7 @@ def start():
 
     scatter = scene.visuals.Markers()
     scatter.set_data(positions, face_color=colors, size=5, edge_color=None)
+
     view.add(scatter)
     
     view.camera = scene.PanZoomCamera(aspect=1)
@@ -80,86 +100,6 @@ def start():
     
     global delay_timer
     delay_timer = Timer(interval=2.0, iterations=1, connect=wait_two, start=True)    
-    
-
-   
-original_positions = None
-move_indices = None
-move_midpoint = None
-move_steps = 120
-move_current_step = [0]
-move_phase = [1]  # 1: moving to midpoint, 2: moving back
-
-def start_node_meeting_animation():
-    global original_positions,move_count, move_indices, move_midpoint, move_current_step, move_phase
-
-    # Pick two random nodes
-    move_indices = []
-    move_midpoint =[]
-
-    original_positions = []
-    print(adj[infected[0]])
-    for i,x in enumerate(infected):
-        for node in adj[x]:
-            print(node[0])
-            move_indices.append([x, node[0]])
-            original_positions.append([positions[x].copy(), positions[node[0]].copy()])
-            move_midpoint.append((positions[x] + positions[node[0]]) / 2)   
-    print(f"Moving nodes {move_indices[0][0]} and {move_indices[0][1]} toward each other.")
-    
-
-    # Store their original positions
-    # Compute midpoint
-    print(f"Midpoint: {move_midpoint}")
-    move_current_step[0] = 0
-    move_phase[0] = 1  # Start with phase 1
-
-    # Start the animation timer
-    move_count=0
-    global move_timer
-    move_timer = Timer(interval=0.016, connect=move_nodes_meeting, start=True)
-
-
-def move_nodes_meeting(event):
-    global move_timer, positions, scatter,move_count, move_indices, original_positions, move_midpoint, move_current_step, move_phase
-    idx1, idx2 = move_indices[move_count]
-
-    steps = move_steps
-    pos1_orig, pos2_orig = original_positions[move_count][0], original_positions[move_count][1]
-    midpoint = move_midpoint[move_count]
-    steps = move_steps
-    t = move_current_step[0] / steps
-
-    if move_phase[0] == 1:
-        # Move toward the midpoint
-        positions[idx1] = (1 - t) * pos1_orig + t * midpoint
-        positions[idx2] = (1 - t) * pos2_orig + t * midpoint
-    else:
-        # Move back to original positions
-        
-        positions[idx1] = (1 - t) * midpoint + t * pos1_orig
-        positions[idx2] = (1 - t) * midpoint + t * pos2_orig
-
-    scatter.set_data(positions, face_color=colors, size=10, edge_color=None)
-    move_current_step[0] += 1
-    if move_current_step[0] > steps:
-        move_current_step[0] = 0
-        if move_phase[0] == 1:
-            time.sleep(0.5)  # Pause before moving back
-            move_phase[0] = 2  # Switch to moving back
-        else:
-           move_timer.stop()  # Stop the timer after moving back
-           if move_count <len(move_indices):
-                move_count+=1
-                move_phase[0] = 1
-                move_timer = Timer(interval=0.016, connect=move_nodes_meeting, start=True)
-
-
-                
-                
-                
-
-
 def smooth_zoom(event):
     global start_x, end_x, start_y, end_y,to_zoom
     t = current_step[0] / steps
@@ -204,14 +144,136 @@ def start_zoom():
 
     global delay_timer
     delay_timer = Timer(interval=2.0, iterations=1, connect=wait_two, start=True)
-    
-    
+      
 def wait_two(event):
     global timer
     timer = Timer(interval=0.016, connect=smooth_zoom, start=True)  # ~180 
     
-    
 
+
+def start_node_meeting_animation():
+    global original_positions,i,max_inf_degree,move_count, move_indices, move_midpoint, move_current_step, move_phase
+
+    # Pick two random nodes
+    move_indices = []
+    move_midpoint =[]
+    original_positions = []
+    print("infected", infected)
+    for x in infected:
+        if i < len(adj[x]):
+            print("this is i", i)
+            move_indices.append((x,adj[x][i][0]))
+            move_midpoint.append((positions[x] + positions[adj[x][i][0]]) / 2)
+            original_positions.append((positions[x].copy(), positions[adj[x][i][0]].copy()))
+    print(move_indices)
+    
+    if not move_indices:
+        return
+    
+    move_current_step[0] = 0
+    move_phase[0] = 1  
+    calculate_move_positions()
+    print(move_phase)
+    global move_timer
+    move_timer = Timer(interval=0.016, connect=move_nodes_meeting, start=True)
+
+def calculate_move_positions():
+    global positions, scatter, move_indices, original_positions, move_midpoint, move_current_step, move_phase, move_timer,idx1, idx2, pos1_orig, pos2_orig, midpoints
+
+    idx1 = np.array([pair[0] for pair in move_indices], dtype=int)
+    idx2 = np.array([pair[1] for pair in move_indices], dtype=int)
+    pos1_orig = np.array([pair[0] for pair in original_positions])
+    pos2_orig = np.array([pair[1] for pair in original_positions])
+    midpoints = np.array(move_midpoint)
+
+
+def move_nodes_meeting(event):
+    global move_timer,i, positions,new_scatter,view, scatter,move_count, idx1, idx2, pos1_orig, pos2_orig, midpoints,move_phase
+    steps = move_steps
+
+    if move_current_step[0] <= steps:
+        
+        t = move_current_step[0] / steps
+        if move_phase[0] == 1:
+            # Move toward the midpoint
+            positions[idx1] = (1 - t) * pos1_orig + t * midpoints
+            positions[idx2] = (1 - t) * pos2_orig + t * midpoints
+        else:
+            # Move back to original positions
+            positions[idx1] = (1 - t) * midpoints + t * pos1_orig
+            positions[idx2] = (1 - t) * midpoints + t * pos2_orig
+
+        scatter.set_data(positions, face_color=colors, size=10, edge_color=None)
+        move_current_step[0] += 1
+    else:
+        move_current_step[0] = 0
+        if move_phase[0] == 1:
+            move_timer.stop()  # Stop the movement animation
+            scatter_graph_on_midpoints()
+            blink_and_remove_new_scatter(callback=resume_node_animation)
+            move_phase[0] = 2  # Switch to moving back
+            view.add(new_scatter)
+
+        else:
+            move_timer.stop()  # Stop the timer after moving back
+            if i < max_inf_degree + 1:
+                i += 1
+                start_node_meeting_animation()
+                
+           
+def resume_node_animation():
+    global move_timer
+    move_timer = Timer(interval=0.016, connect=move_nodes_meeting, start=True)
+
+
+def scatter_graph_on_midpoints():
+    global view, midpoints, new_scatter,new_positions
+    # Make sure midpoints is a NumPy array of shape (N, 2)
+    new_positions = np.array(midpoints)
+    num_new = len(new_positions)
+
+    # Choose a color for the new graph nodes (e.g., black)
+    new_colors = np.array([[0, 0, 0, 1]] * num_new)
+
+    # Create a new Markers visual for the new graph
+    new_scatter = scene.visuals.Markers()
+    new_scatter.set_data(new_positions, face_color=interaction_color, size=15, edge_color=None)
+
+    
+ 
+
+
+def blink_and_remove_new_scatter(callback=None):
+    global new_scatter, view, blink_timer,new_positions
+
+    blink_duration = 2.0  # seconds
+    interval = 0.016      # ~60 FPS
+    total_steps = int(blink_duration / interval)
+    step = [0]
+
+    def blink(event):
+        
+        # Animate size using a sine wave for smooth blinking
+        # Calmer blinking: smaller amplitude and slower frequency
+        base_size = 15
+        amplitude = 10  # was 10, now less extreme
+        period = 45    # was 30, now slower (higher = slower blink)
+        blink_size = base_size + amplitude * abs(math.sin(2 * math.pi * step[0] / period))
+
+        new_scatter.set_data(new_scatter._data['a_position'], face_color=interaction_color, size=blink_size, edge_color=None)
+
+        step[0] += 1
+
+        if step[0] >= total_steps:
+            # Remove the scatter after blinking
+            
+            new_scatter.parent = None  # Remove from scene
+            
+            blink_timer.stop()
+            if callback:
+                callback()
+
+    blink_timer = Timer(interval=interval, connect=blink, start=True)
 
 if __name__ == '__main__':
     
