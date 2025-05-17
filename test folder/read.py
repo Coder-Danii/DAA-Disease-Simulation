@@ -26,8 +26,15 @@ with open("pos.pickle","rb") as f:
 with open ("adjList.pickle", "rb") as f:
     adj=pickle.load(f)
 
-print(adj)
-
+print(pos)
+# adj list
+adj = {node: [] for node in G.nodes()}
+for edges in G.edges():
+    weight=G[edges[0]][edges[1]]['weight']
+    adj[edges[0]].append([edges[1],weight])
+    adj[edges[1]].append([edges[0],weight])
+with open ("adjList.pickle","wb") as f:
+    pickle.dump(adj,f)
 print("Loading done")
 
 start_time = time.time()
