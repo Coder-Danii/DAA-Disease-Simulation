@@ -6,13 +6,18 @@ import pickle
 # n=10000       n=5000      
 # k=12          k=10
 # p=0.05
+n=5000
+k=10
+p=0.05
+# n=10000   
+# k=12
+#       
 
-
-# G=nx.watts_strogatz_graph(n,k,p,seed=17)
+G=nx.watts_strogatz_graph(n,k,p,seed=17)
 
 print("Start")
 
-G=nx.barabasi_albert_graph(5000,3,seed=17)
+# G=nx.barabasi_albert_graph(5000,3,seed=17)
 
 print("Graph generated")
 
