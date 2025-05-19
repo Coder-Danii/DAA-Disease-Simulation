@@ -42,6 +42,7 @@ interaction_color = [1, 0, 0, 1]
 non_infected_color = [0, 1, 0, 0.3]
 at_risk_color = [0, 0.3, 1, 1]
 is_infected = np.zeros(5000, dtype=bool)
+is_interacting = np.zeros(5000, dtype=bool)
 is_alive = np.ones(5000, dtype=bool)
 move_count = []
 move_timer = None
@@ -54,7 +55,7 @@ move_current_step = [0]
 move_phase = [1]  # 1: moving to midpoint, 2: moving back
 idx1 = 0
 idx2 = 0
-inf_prob = 1
+inf_prob = .7
 pos1_orig = None
 pos2_orig = None
 midpoints = None
@@ -217,15 +218,15 @@ def start_node_meeting_animation(event=None):
 def calculate_move_positions():
     global positions, infected, infected_count, temp_infected, scatter, move_indices, infected_days
     global original_positions, move_midpoint, move_current_step, move_phase
-    global move_timer, idx1, idx2, pos1_orig, pos2_orig, midpoints
+    global move_timer, idx1, idx2, pos1_orig, pos2_orig, midpoints,is_infected,is_interacting
     
     temp_infected = []
     for i in range(5000):
-        if to_process[i].empty() or not is_alive[i]:
+        if to_process[i].empty() or not is_alive[i] :
             continue
         else:
             x = to_process[i].get()
-            if not is_alive[x[0]]:
+            if not is_alive[x[0]] or is_infected[x[0]] :
                 continue
                 
             if to_process[i].empty():
@@ -237,7 +238,7 @@ def calculate_move_positions():
             ra = random.randint(1, 10)
             if ra + 10 < x[1]:
                 continue
-                
+            is_interacting[x]=True
             ira = random.uniform(0, 1)
             if ira < inf_prob:
                 if is_infected[x[0]] == False and is_alive[x[0]]:
@@ -266,7 +267,7 @@ def calculate_move_positions():
 def death_check(event=None):
     print("One day is done")
     global is_alive, infected_count, positions, colors, scatter, sizes, to_zoom, start_time
-    global is_death_checking, simulation_stage, infected_days, total
+    global is_death_checking, simulation_stage, infected_days, total,ia_infected
     
     if is_death_checking:
         return
@@ -287,7 +288,6 @@ def death_check(event=None):
                     colors[node[0]] = non_infected_color
             is_at_risk[x] -= 1
             infected.remove(x)
-            total -= 1
             infected_count -= 1
             scatter.set_data(positions, face_color=colors, size=sizes, edge_color=None)
             print("dead", x)
@@ -296,6 +296,9 @@ def death_check(event=None):
             if (infected_days[x] > 14):
                 infected_days[x] = 0
                 colors[x] = non_infected_color
+                infected.remove(x)
+                infected_count -= 1
+                is_infected[x] = False
                 start_time = time.time()
     
     to_zoom += 1
@@ -410,7 +413,7 @@ def blink_and_remove_new_scatter(callback=None):
     blink_timer = Timer(interval=interval, connect=blink, start=True)
 
 def main_loop_step(event):
-    global simulation_stage, to_zoom, steps, timer, is_zooming, is_node_meeting, is_death_checking
+    global simulation_stage, to_zoom, steps, timer, is_zooming, is_node_meeting, is_death_checking,is_interacting
     
     if is_zooming or is_node_meeting or is_death_checking or is_blinking:
         return
@@ -425,6 +428,7 @@ def main_loop_step(event):
         start_zoom()
         
     elif simulation_stage == 1:
+        is_interacting = np.zeros(5000, dtype=bool)
         start_node_meeting_animation()
         
     elif simulation_stage == 2:
