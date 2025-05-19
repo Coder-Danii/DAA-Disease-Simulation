@@ -1,0 +1,27 @@
+import tkinter as tk
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+import matplotlib.pyplot as plt
+
+def run_graph_window(get_data_callback):
+    def update_graph():
+        times, infected_counts, total_counts = get_data_callback()
+        ax.clear()
+        ax.plot(times, infected_counts, color='red', label='Infected')
+        ax.plot(times, total_counts, color='blue', label='Total')
+        ax.set_title("Infected vs Total Over Time")
+        ax.set_xlabel("Time (ticks)")
+        ax.set_ylabel("Count")
+        ax.legend()
+        canvas.draw()
+        graph_window.after(1000, update_graph)
+
+    graph_window = tk.Tk()
+    graph_window.title("Infection Graph")
+    graph_window.geometry("500x400")
+
+    fig, ax = plt.subplots(figsize=(5, 4), dpi=100)
+    canvas = FigureCanvasTkAgg(fig, master=graph_window)
+    canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
+
+    update_graph()
+    graph_window.mainloop()
