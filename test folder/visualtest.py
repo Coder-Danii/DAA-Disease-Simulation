@@ -265,7 +265,6 @@ def calculate_move_positions():
         idx1 = idx2 = pos1_orig = pos2_orig = midpoints = np.array([])
 
 def death_check(event=None):
-    print("One day is done")
     global is_alive, infected_count, positions, colors, scatter, sizes, to_zoom, start_time
     global is_death_checking, simulation_stage, infected_days, total,ia_infected
     
@@ -290,7 +289,6 @@ def death_check(event=None):
             infected.remove(x)
             infected_count -= 1
             scatter.set_data(positions, face_color=colors, size=sizes, edge_color=None)
-            print("dead", x)
         else:
             infected_days[x] += 1
             if (infected_days[x] > 14):
